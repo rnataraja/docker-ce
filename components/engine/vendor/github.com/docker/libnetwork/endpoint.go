@@ -1098,6 +1098,15 @@ func (ep *endpoint) assignAddressVersion(ipVer int, ipam ipamapi.Ipam) error {
 		if progAdd != nil && !d.Pool.Contains(progAdd) {
 			continue
 		}
+        if strings.Contains(ep.Name(), "AFW") {
+			logrus.Debugf("AFW : Adding IPAM options endpoint %s's interface on network %s\n", ep.Name(), n.Name())
+        	if (ep.ipamOptions == nil) {
+        		ep.ipamOptions = make(map[string]string)
+        	}
+        	ep.ipamOptions["epname"] = ep.Name()
+            ep.ipamOptions["netname"] = n.Name()
+        }
+
 		addr, _, err := ipam.RequestAddress(d.PoolID, progAdd, ep.ipamOptions)
 		if err == nil {
 			ep.Lock()
