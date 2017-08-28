@@ -1,4 +1,7 @@
 FROM centos:7
+ENV http_proxy http://proxy.esl.cisco.com:80
+ENV https_proxy http://proxy.esl.cisco.com:80
+
 RUN yum groupinstall -y "Development Tools"
 RUN yum -y swap -- remove systemd-container systemd-container-libs -- install systemd systemd-libs
 RUN yum install -y \
