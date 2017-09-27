@@ -25,6 +25,9 @@
 
 FROM debian:jessie
 
+ENV http_proxy http://proxy.esl.cisco.com:80
+ENV https_proxy http://proxy.esl.cisco.com:80
+
 # allow replacing httpredir or deb mirror
 ARG APT_MIRROR=deb.debian.org
 RUN sed -ri "s/(httpredir|deb).debian.org/$APT_MIRROR/g" /etc/apt/sources.list
