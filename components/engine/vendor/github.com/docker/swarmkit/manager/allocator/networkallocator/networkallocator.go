@@ -200,9 +200,23 @@ func (na *NetworkAllocator) Deallocate(n *api.Network) error {
 	return na.freePools(n, localNet.pools)
 }
 
+func (na *NetworkAllocator) BuildIpamOptions(networks []*api.NetworkAttachmentConfig) (map[string]string) {
+    opts := make(map[string]string)
+
+    for _, net := range networks {
+	for k, v := range net.DriverAttachmentOpts {
+	    if strings.Index(k, "ipam.") == 0 { 
+		opts[k] = v
+	    }
+	}	
+    }
+    return opts
+}
+
 // ServiceAllocate allocates all the network resources such as virtual
 // IP and ports needed by the service.
 func (na *NetworkAllocator) ServiceAllocate(s *api.Service) (err error) {
+	opts := na.BuildIpamOptions(s.Spec.Task.Networks)
 	if err = na.portAllocator.serviceAllocatePorts(s); err != nil {
 		return err
 	}
@@ -243,7 +257,7 @@ func (na *NetworkAllocator) ServiceAllocate(s *api.Service) (err error) {
 vipLoop:
 	for _, eAttach := range s.Endpoint.VirtualIPs {
 		if na.IsVIPOnIngressNetwork(eAttach) && IsIngressNetworkNeeded(s) {
-			if err = na.allocateVIP(eAttach); err != nil {
+			if err = na.allocateVIP(eAttach, opts); err != nil {
 				return err
 			}
 			eVIPs = append(eVIPs, eAttach)
@@ -252,7 +266,7 @@ vipLoop:
 		}
 		for _, nAttach := range specNetworks {
 			if nAttach.Target == eAttach.NetworkID {
-				if err = na.allocateVIP(eAttach); err != nil {
+				if err = na.allocateVIP(eAttach, opts); err != nil {
 					return err
 				}
 				eVIPs = append(eVIPs, eAttach)
@@ -273,7 +287,7 @@ networkLoop:
 		}
 
 		vip := &api.Endpoint_VirtualIP{NetworkID: nAttach.Target}
-		if err = na.allocateVIP(vip); err != nil {
+		if err = na.allocateVIP(vip, opts); err != nil {
 			return err
 		}
 
@@ -485,7 +499,7 @@ func (na *NetworkAllocator) IsNodeAllocated(node *api.Node) bool {
 // AllocateNode allocates the IP addresses for the network to which
 // the node is attached.
 func (na *NetworkAllocator) AllocateNode(node *api.Node) error {
-	if err := na.allocateNetworkIPs(node.Attachment); err != nil {
+	if err := na.allocateNetworkIPs(node.Attachment, nil); err != nil {
 		return err
 	}
 
@@ -503,11 +517,12 @@ func (na *NetworkAllocator) DeallocateNode(node *api.Node) error {
 // AllocateTask allocates all the endpoint resources for all the
 // networks that a task is attached to.
 func (na *NetworkAllocator) AllocateTask(t *api.Task) error {
+	opts := na.BuildIpamOptions(t.Spec.Networks)
 	for i, nAttach := range t.Networks {
 		if localNet := na.getNetwork(nAttach.Network.ID); localNet != nil && localNet.isNodeLocal {
 			continue
 		}
-		if err := na.allocateNetworkIPs(nAttach); err != nil {
+		if err := na.allocateNetworkIPs(nAttach, opts); err != nil {
 			if err := na.releaseEndpoints(t.Networks[:i]); err != nil {
 				log.G(context.TODO()).WithError(err).Errorf("Failed to release IP addresses while rolling back allocation for task %s network %s", t.ID, nAttach.Network.ID)
 			}
@@ -572,7 +587,7 @@ func (na *NetworkAllocator) releaseEndpoints(networks []*api.NetworkAttachment) 
 }
 
 // allocate virtual IP for a single endpoint attachment of the service.
-func (na *NetworkAllocator) allocateVIP(vip *api.Endpoint_VirtualIP) error {
+func (na *NetworkAllocator) allocateVIP(vip *api.Endpoint_VirtualIP, opts map[string]string) error {
 	localNet := na.getNetwork(vip.NetworkID)
 	if localNet == nil {
 		return errors.New("networkallocator: could not find local network state")
@@ -604,7 +619,7 @@ func (na *NetworkAllocator) allocateVIP(vip *api.Endpoint_VirtualIP) error {
 	}
 
 	for _, poolID := range localNet.pools {
-		ip, _, err := ipam.RequestAddress(poolID, addr, nil)
+		ip, _, err := ipam.RequestAddress(poolID, addr, opts)
 		if err != nil && err != ipamapi.ErrNoAvailableIPs && err != ipamapi.ErrIPOutOfRange {
 			return errors.Wrap(err, "could not allocate VIP from IPAM")
 		}
@@ -654,7 +669,7 @@ func (na *NetworkAllocator) deallocateVIP(vip *api.Endpoint_VirtualIP) error {
 }
 
 // allocate the IP addresses for a single network attachment of the task.
-func (na *NetworkAllocator) allocateNetworkIPs(nAttach *api.NetworkAttachment) error {
+func (na *NetworkAllocator) allocateNetworkIPs(nAttach *api.NetworkAttachment, opts map[string]string) error {
 	var ip *net.IPNet
 
 	ipam, _, _, err := na.resolveIPAM(nAttach.Network)
@@ -689,7 +704,7 @@ func (na *NetworkAllocator) allocateNetworkIPs(nAttach *api.NetworkAttachment) e
 		for _, poolID := range localNet.pools {
 			var err error
 
-			ip, _, err = ipam.RequestAddress(poolID, addr, nil)
+			ip, _, err = ipam.RequestAddress(poolID, addr, opts)
 			if err != nil && err != ipamapi.ErrNoAvailableIPs && err != ipamapi.ErrIPOutOfRange {
 				return errors.Wrap(err, "could not allocate IP from IPAM")
 			}
