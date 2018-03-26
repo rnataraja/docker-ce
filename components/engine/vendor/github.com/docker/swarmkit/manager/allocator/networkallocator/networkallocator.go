@@ -253,6 +253,7 @@ func (na *NetworkAllocator) ServiceAllocate(s *api.Service) (err error) {
 
 	// Allocate VIPs for all the pre-populated endpoint attachments
 	eVIPs := s.Endpoint.VirtualIPs[:0]
+	opts["com.docker.service.vip"] = "yes"
 
 vipLoop:
 	for _, eAttach := range s.Endpoint.VirtualIPs {
