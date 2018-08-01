@@ -193,9 +193,23 @@ func (na *cnmNetworkAllocator) Deallocate(n *api.Network) error {
 	return na.freePools(n, localNet.pools)
 }
 
+func (na *cnmNetworkAllocator) buildIpamOptions(networks []*api.NetworkAttachmentConfig) map[string]string {
+	opts := make(map[string]string)
+
+	for _, net := range networks {
+		for k, v := range net.DriverAttachmentOpts {
+			if strings.Index(k, "ipam.") == 0 {
+				opts[k] = v
+			}
+		}
+	}
+	return opts
+}
+
 // AllocateService allocates all the network resources such as virtual
 // IP and ports needed by the service.
 func (na *cnmNetworkAllocator) AllocateService(s *api.Service) (err error) {
+	opts := na.buildIpamOptions(s.Spec.Task.Networks)
 	if err = na.portAllocator.serviceAllocatePorts(s); err != nil {
 		return err
 	}
@@ -232,11 +246,12 @@ func (na *cnmNetworkAllocator) AllocateService(s *api.Service) (err error) {
 
 	// Allocate VIPs for all the pre-populated endpoint attachments
 	eVIPs := s.Endpoint.VirtualIPs[:0]
+	opts["com.docker.service.vip"] = "yes"
 
 vipLoop:
 	for _, eAttach := range s.Endpoint.VirtualIPs {
 		if na.IsVIPOnIngressNetwork(eAttach) && networkallocator.IsIngressNetworkNeeded(s) {
-			if err = na.allocateVIP(eAttach); err != nil {
+			if err = na.allocateVIP(eAttach, opts); err != nil {
 				return err
 			}
 			eVIPs = append(eVIPs, eAttach)
@@ -246,7 +261,7 @@ vipLoop:
 		for _, nAttach := range specNetworks {
 			if nAttach.Target == eAttach.NetworkID {
 				log.L.WithFields(logrus.Fields{"service_id": s.ID, "vip": eAttach.Addr}).Debug("allocate vip")
-				if err = na.allocateVIP(eAttach); err != nil {
+				if err = na.allocateVIP(eAttach, opts); err != nil {
 					return err
 				}
 				eVIPs = append(eVIPs, eAttach)
@@ -267,7 +282,7 @@ networkLoop:
 		}
 
 		vip := &api.Endpoint_VirtualIP{NetworkID: nAttach.Target}
-		if err = na.allocateVIP(vip); err != nil {
+		if err = na.allocateVIP(vip, opts); err != nil {
 			return err
 		}
 
@@ -442,11 +457,12 @@ func (na *cnmNetworkAllocator) IsServiceAllocated(s *api.Service, flags ...func(
 // AllocateTask allocates all the endpoint resources for all the
 // networks that a task is attached to.
 func (na *cnmNetworkAllocator) AllocateTask(t *api.Task) error {
+	opts := na.buildIpamOptions(t.Spec.Networks)
 	for i, nAttach := range t.Networks {
 		if localNet := na.getNetwork(nAttach.Network.ID); localNet != nil && localNet.isNodeLocal {
 			continue
 		}
-		if err := na.allocateNetworkIPs(nAttach); err != nil {
+		if err := na.allocateNetworkIPs(nAttach, opts); err != nil {
 			if err := na.releaseEndpoints(t.Networks[:i]); err != nil {
 				log.G(context.TODO()).WithError(err).Errorf("failed to release IP addresses while rolling back allocation for task %s network %s", t.ID, nAttach.Network.ID)
 			}
@@ -511,7 +527,7 @@ func (na *cnmNetworkAllocator) IsAttachmentAllocated(node *api.Node, networkAtta
 // on a given node
 func (na *cnmNetworkAllocator) AllocateAttachment(node *api.Node, networkAttachment *api.NetworkAttachment) error {
 
-	if err := na.allocateNetworkIPs(networkAttachment); err != nil {
+	if err := na.allocateNetworkIPs(networkAttachment, nil); err != nil {
 		return err
 	}
 
@@ -580,8 +596,8 @@ func (na *cnmNetworkAllocator) releaseEndpoints(networks []*api.NetworkAttachmen
 }
 
 // allocate virtual IP for a single endpoint attachment of the service.
-func (na *cnmNetworkAllocator) allocateVIP(vip *api.Endpoint_VirtualIP) error {
-	var opts map[string]string
+func (na *cnmNetworkAllocator) allocateVIP(vip *api.Endpoint_VirtualIP,
+	opts map[string]string) error {
 	localNet := na.getNetwork(vip.NetworkID)
 	if localNet == nil {
 		return errors.New("networkallocator: could not find local network state")
@@ -613,7 +629,7 @@ func (na *cnmNetworkAllocator) allocateVIP(vip *api.Endpoint_VirtualIP) error {
 	}
 	if localNet.nw.IPAM != nil && localNet.nw.IPAM.Driver != nil {
 		// set ipam allocation method to serial
-		opts = setIPAMSerialAlloc(localNet.nw.IPAM.Driver.Options)
+		opts = setIPAMSerialAlloc(opts, localNet.nw.IPAM.Driver.Options)
 	}
 
 	for _, poolID := range localNet.pools {
@@ -667,9 +683,8 @@ func (na *cnmNetworkAllocator) deallocateVIP(vip *api.Endpoint_VirtualIP) error 
 }
 
 // allocate the IP addresses for a single network attachment of the task.
-func (na *cnmNetworkAllocator) allocateNetworkIPs(nAttach *api.NetworkAttachment) error {
+func (na *cnmNetworkAllocator) allocateNetworkIPs(nAttach *api.NetworkAttachment, opts map[string]string) error {
 	var ip *net.IPNet
-	var opts map[string]string
 
 	ipam, _, _, err := na.resolveIPAM(nAttach.Network)
 	if err != nil {
@@ -702,7 +717,7 @@ func (na *cnmNetworkAllocator) allocateNetworkIPs(nAttach *api.NetworkAttachment
 		// Set the ipam options if the network has an ipam driver.
 		if localNet.nw.IPAM != nil && localNet.nw.IPAM.Driver != nil {
 			// set ipam allocation method to serial
-			opts = setIPAMSerialAlloc(localNet.nw.IPAM.Driver.Options)
+			opts = setIPAMSerialAlloc(opts, localNet.nw.IPAM.Driver.Options)
 		}
 
 		for _, poolID := range localNet.pools {
@@ -941,7 +956,7 @@ func (na *cnmNetworkAllocator) allocatePools(n *api.Network) (map[string]string,
 		}
 		dOptions[ipamapi.RequestAddressType] = netlabel.Gateway
 		// set ipam allocation method to serial
-		dOptions = setIPAMSerialAlloc(dOptions)
+		dOptions = setIPAMSerialAlloc(nil, dOptions)
 		defer delete(dOptions, ipamapi.RequestAddressType)
 
 		if ic.Gateway != "" || gwIP == nil {
@@ -1008,12 +1023,17 @@ func IsBuiltInDriver(name string) bool {
 }
 
 // setIPAMSerialAlloc sets the ipam allocation method to serial
-func setIPAMSerialAlloc(opts map[string]string) map[string]string {
+func setIPAMSerialAlloc(opts, driveropts map[string]string) map[string]string {
 	if opts == nil {
 		opts = make(map[string]string)
 	}
-	if _, ok := opts[ipamapi.AllocSerialPrefix]; !ok {
+	if driveropts == nil {
 		opts[ipamapi.AllocSerialPrefix] = "true"
+	} else if _, ok := driveropts[ipamapi.AllocSerialPrefix]; !ok {
+		opts[ipamapi.AllocSerialPrefix] = "true"
+	} else {
+		x := driveropts[ipamapi.AllocSerialPrefix]
+		opts[ipamapi.AllocSerialPrefix] = x
 	}
 	return opts
 }
