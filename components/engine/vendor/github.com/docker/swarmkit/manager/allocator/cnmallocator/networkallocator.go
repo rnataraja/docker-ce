@@ -956,7 +956,7 @@ func (na *cnmNetworkAllocator) allocatePools(n *api.Network) (map[string]string,
 		}
 		dOptions[ipamapi.RequestAddressType] = netlabel.Gateway
 		// set ipam allocation method to serial
-		dOptions = setIPAMSerialAlloc(nil, dOptions)
+		dOptions = setIPAMSerialAlloc(dOptions, dOptions)
 		defer delete(dOptions, ipamapi.RequestAddressType)
 
 		if ic.Gateway != "" || gwIP == nil {
