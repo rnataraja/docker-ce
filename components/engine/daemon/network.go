@@ -591,13 +591,15 @@ func buildCreateEndpointOptions(c *container.Container, n libnetwork.Network, ep
 	}
 
 	if epConfig != nil {
+
+		var (
+			ipList          []net.IP
+			ip, ip6, linkip net.IP
+		)
 		ipam := epConfig.IPAMConfig
+		ipList = make([]net.IP, 0)
 
 		if ipam != nil {
-			var (
-				ipList          []net.IP
-				ip, ip6, linkip net.IP
-			)
 
 			for _, ips := range ipam.LinkLocalIPs {
 				if linkip = net.ParseIP(ips); linkip == nil && ips != "" {
@@ -616,15 +618,23 @@ func buildCreateEndpointOptions(c *container.Container, n libnetwork.Network, ep
 			}
 
 			createOptions = append(createOptions,
-				libnetwork.CreateOptionIpam(ip, ip6, ipList, nil))
-
+				libnetwork.CreateOptionIpam(ip, ip6, ipList, epConfig.DriverOpts))
+		} else if len(epConfig.DriverOpts) != 0 {
+			createOptions = append(createOptions,
+				libnetwork.CreateOptionIpam(ip, ip6, ipList, epConfig.DriverOpts))
 		}
 
 		for _, alias := range epConfig.Aliases {
 			createOptions = append(createOptions, libnetwork.CreateOptionMyAlias(alias))
 		}
 		for k, v := range epConfig.DriverOpts {
-			createOptions = append(createOptions, libnetwork.EndpointOptionGeneric(options.Generic{k: v}))
+			if strings.Index(k, "net.") == 0 {
+				createOptions = append(createOptions, libnetwork.EndpointOptionGeneric(options.Generic{k: v}))
+			} else if strings.Index(k, "ipam.") == 0 {
+
+			} else {
+				createOptions = append(createOptions, libnetwork.EndpointOptionGeneric(options.Generic{k: v}))
+			}
 		}
 	}
 
