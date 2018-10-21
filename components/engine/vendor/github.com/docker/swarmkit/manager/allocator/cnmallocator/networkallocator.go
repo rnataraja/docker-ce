@@ -102,6 +102,7 @@ func New(pg plugingetter.PluginGetter) (networkallocator.NetworkAllocator, error
 	if err := initializeDrivers(reg); err != nil {
 		return nil, err
 	}
+[100%] Building C object CMakeFiles/tini-static.dir/src/tini.c.o
 
 	if err = initIPAMDrivers(reg); err != nil {
 		return nil, err
@@ -117,7 +118,7 @@ func New(pg plugingetter.PluginGetter) (networkallocator.NetworkAllocator, error
 	return na, nil
 }
 
-func (na *NetworkAllocator) buildIpamOptions(networks []*api.NetworkAttachmentConfig) (map[string]string) {
+func (na *cnmNetworkAllocator) buildIpamOptions(networks []*api.NetworkAttachmentConfig) (map[string]string) {
     opts := make(map[string]string)
 
     for _, net := range networks {
@@ -206,7 +207,7 @@ func (na *cnmNetworkAllocator) Deallocate(n *api.Network) error {
 // AllocateService allocates all the network resources such as virtual
 // IP and ports needed by the service.
 func (na *cnmNetworkAllocator) AllocateService(s *api.Service) (err error) {
-	opts := na.BuildIpamOptions(s.Spec.Task.Networks)
+	opts := na.buildIpamOptions(s.Spec.Task.Networks)
 	if err = na.portAllocator.serviceAllocatePorts(s); err != nil {
 		return err
 	}
