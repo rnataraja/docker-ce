@@ -29,6 +29,8 @@ FROM debian:jessie
 ARG APT_MIRROR=deb.debian.org
 RUN sed -ri "s/(httpredir|deb).debian.org/$APT_MIRROR/g" /etc/apt/sources.list
 
+ENV http_proxy http://proxy.esl.cisco.com:80
+ENV https_proxy http://proxy.esl.cisco.com:80
 # Packaged dependencies
 RUN apt-get update && apt-get install -y \
 	apparmor \

@@ -102,7 +102,6 @@ func New(pg plugingetter.PluginGetter) (networkallocator.NetworkAllocator, error
 	if err := initializeDrivers(reg); err != nil {
 		return nil, err
 	}
-[100%] Building C object CMakeFiles/tini-static.dir/src/tini.c.o
 
 	if err = initIPAMDrivers(reg); err != nil {
 		return nil, err
@@ -569,7 +568,7 @@ func (na *cnmNetworkAllocator) releaseEndpoints(networks []*api.NetworkAttachmen
 }
 
 // allocate virtual IP for a single endpoint attachment of the service.
-func (na *NetworkAllocator) allocateVIP(vip *api.Endpoint_VirtualIP, opts map[string]string) error {
+func (na *cnmNetworkAllocator) allocateVIP(vip *api.Endpoint_VirtualIP, opts map[string]string) error {
 	localNet := na.getNetwork(vip.NetworkID)
 	if localNet == nil {
 		return errors.New("networkallocator: could not find local network state")
@@ -651,7 +650,7 @@ func (na *cnmNetworkAllocator) deallocateVIP(vip *api.Endpoint_VirtualIP) error 
 }
 
 // allocate the IP addresses for a single network attachment of the task.
-func (na *NetworkAllocator) allocateNetworkIPs(nAttach *api.NetworkAttachment, opts map[string]string) error {
+func (na *cnmNetworkAllocator) allocateNetworkIPs(nAttach *api.NetworkAttachment, opts map[string]string) error {
 	var ip *net.IPNet
 
 	ipam, _, _, err := na.resolveIPAM(nAttach.Network)
