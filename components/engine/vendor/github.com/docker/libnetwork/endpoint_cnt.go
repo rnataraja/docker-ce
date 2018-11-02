@@ -137,6 +137,8 @@ func (ec *endpointCnt) setCnt(cnt uint64) error {
 	return ec.updateStore()
 }
 
+
+
 func (ec *endpointCnt) atomicIncDecEpCnt(inc bool) error {
 retry:
 	ec.Lock()
@@ -175,4 +177,8 @@ func (ec *endpointCnt) IncEndpointCnt() error {
 
 func (ec *endpointCnt) DecEndpointCnt() error {
 	return ec.atomicIncDecEpCnt(false)
+}
+
+func (ec *endpointCnt) SetEndpointCnt(cnt uint64) error {
+    return ec.setCnt(cnt)
 }

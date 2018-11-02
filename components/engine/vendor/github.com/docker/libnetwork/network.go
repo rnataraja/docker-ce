@@ -926,6 +926,7 @@ func (n *network) driver(load bool) (driverapi.Driver, error) {
 }
 
 func (n *network) Delete() error {
+    logrus.Debugf("Request to Delete Network %s\n", n.id)
 	return n.delete(false)
 }
 
@@ -957,12 +958,20 @@ func (n *network) delete(force bool) error {
 		return fmt.Errorf("error marking network %s (%s) for deletion: %v", n.Name(), n.ID(), err)
 	}
 
+    logrus.Debugf("Deleting Network %s with Config From %s\n", n.id, n.ConfigFrom())
 	if n.ConfigFrom() != "" {
 		if t, err := c.getConfigNetwork(n.ConfigFrom()); err == nil {
-			if err := t.getEpCnt().DecEndpointCnt(); err != nil {
+            // ConfigOnly and ConfigFrom Networks have 1 to 1 correspondence? In that case 
+            // there is no need to decrement the ref count, simply set it to zero. 
+            // In the case of a powercycle, the count on the configfrom network increments more than 
+            // once and this can cause the configfrom network to linger forever and not even deleteable.
+            // This happens due to the additional increment after the power on, hence count can never
+            // become zero. 
+			if err := t.getEpCnt().SetEndpointCnt(0); err != nil {
 				logrus.Warnf("Failed to update reference count for configuration network %q on removal of network %q: %v",
 					t.Name(), n.Name(), err)
 			}
+            logrus.Debugf("Config Only Networks new endpoint count is %d\n", t.getEpCnt().EndpointCnt())
 		} else {
 			logrus.Warnf("Could not find configuration network %q during removal of network %q", n.configOnly, n.Name())
 		}
